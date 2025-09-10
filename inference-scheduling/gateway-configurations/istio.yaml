@@ -1,0 +1,12 @@
+gateway:
+  gatewayClassName: istio
+  # service.type defaults to ClusterIP for Istio (working configuration)
+  destinationRule:
+    enabled: true
+    trafficPolicy:
+      tls:
+        mode: SIMPLE
+        insecureSkipVerify: true
+
+provider:
+  name: istio 
