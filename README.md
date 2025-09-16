@@ -2,65 +2,84 @@
 
 > **📁 All deployment files and scripts are in the [`inference-scheduling/`](./inference-scheduling/) directory. Start there for deployment.**
 
-## 🚀 Quick Start - Simplified Deployment
+## 🚀 Quick Start - Corrected Working Deployment
 
 This well-lit path provides a streamlined helmfile-based approach to deploying intelligent inference
 scheduling with LLM-D. All deployment files and scripts are located in the `inference-scheduling/` directory.
 
-**✅ Tested Working Setup:**
-- **Model**: [meta-llama/Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct) (8.03B parameters)
-- **Hardware**: 4x L40S GPUs (48GB each, 192GB total)
+**✅ Verified Working Setup (Updated September 16, 2025):**
+- **Model**: [meta-llama/Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct) (8B parameters)
+- **Image**: ghcr.io/llm-d/llm-d-dev:pr-170 (dev build with latest features)
+- **Hardware**: 4x GPUs (single GPU per replica)
 - **Configuration**: 4 replicas × TP=1 (single GPU per replica)
-- **Context**: 4096 tokens (optimized for 8B model)
-- **Storage**: 50Gi PVC with high-performance storage
-- **Gateway**: Istio ClusterIP with precise prefix-cache-aware GAIE scheduling
+- **Storage**: 50Gi (optimized for 8B model)
+- **Gateway**: Upstream Istio with Gateway API Inference Extension support
+- **Routing**: HTTPRoute → Gateway → InferencePool (GAIE) → Model Pods
 
-**Key Success Factors:**
-- Lightweight Llama-3.1-8B-Instruct model (8.03B parameters) for reliable deployment
-- Single GPU per replica (TP=1) for stable multi-node deployment
-- Precise prefix-cache-aware scheduling for maximum cache hit rates
-- Persistent storage with PVC for model caching and fast restarts
-- Advanced monitoring with PodMonitor integration
-- ClusterIP services for reliable internal cluster communication
+**🔧 Critical Success Factors (Updated):**
+- **Upstream Istio**: Required for Gateway API Inference Extension support
+- **Chart Version Alignment**: v1.3.0 (infra) + v0.2.7 (modelservice) for compatibility
+- **Manual HTTPRoute Application**: Required step from newer deployment guide
+- **Gateway API CRDs**: Installed via install-gateway-provider-dependencies.sh
+- **Service Type Configuration**: LoadBalancer for proper gateway functionality
 
 ## Environment Setup
 
 ```bash
 # Export required environment variables
-export KUBECONFIG=~/my-kubeconfig-path
+export KUBECONFIG=~/.kube/config
 export NAMESPACE=${NAMESPACE:-llm-d-inference-scheduling}
-export HF_TOKEN=hf_your_huggingface_token_here
+export HF_TOKEN=$(cat ~/.keys/hf.key)
 ```
 
-## Prerequisites
+## Prerequisites (Updated)
 
-### 1. Install LeaderWorkerSet (LWS)
+### 1. Install Gateway Provider Dependencies (CRITICAL)
 ```bash
-# Install LWS for advanced workload management
-export LWS_CHART_VERSION=0.7.0
-helm install lws oci://registry.k8s.io/lws/charts/lws \
-    --version=${LWS_CHART_VERSION} \
-    --namespace lws-system \
-    --create-namespace \
-    --wait --timeout 300s
+# Navigate to gateway provider directory
+cd ./llm-d/guides/prereq/gateway-provider
 
-# Wait for controller to be ready (takes ~8 minutes)
-kubectl -n lws-system get deploy,po
-kubectl wait deploy/lws-controller-manager -n lws-system --for=condition=available --timeout=8m
-
-# Verify CRD installation
-kubectl get crd leaderworkersets.leaderworkerset.x-k8s.io
-kubectl api-resources | grep -i leaderworker
-```
-
-### 2. Install Gateway Control Plane Providers
-```bash
-git clone https://github.com/llm-d-incubation/llm-d-infra.git
-cd ./llm-d-infra/quickstart/gateway-control-plane-providers
+# Install Gateway API and GAIE CRDs
 ./install-gateway-provider-dependencies.sh
+
+# Note: On OpenShift, Gateway API CRDs are managed by Ingress Operator
+# GAIE CRDs will be installed successfully
 ```
 
-### 3. Create Namespace and HuggingFace Token Secret
+### 2. Remove OpenShift Service Mesh (If Present)
+```bash
+# OpenShift Service Mesh lacks Gateway API Inference Extension support
+# Remove it to install upstream Istio
+
+# Remove namespace from ServiceMesh (if added)
+oc delete servicemeshmember default -n llm-d-inference-scheduling || true
+
+# Remove ServiceMesh Control Plane
+oc delete servicemeshcontrolplane data-science-smcp -n istio-system || true
+
+# Wait for cleanup
+sleep 30 && oc get pods -n istio-system
+```
+
+### 3. Install Upstream Istio with Gateway API Support
+```bash
+# Stay in gateway provider directory
+cd ./llm-d/guides/prereq/gateway-provider
+
+# Patch Istio CRDs for Helm ownership (required on OpenShift)
+for crd in $(oc get crd | grep istio.io | awk '{print $1}'); do
+  oc patch crd $crd --type='merge' -p='{"metadata":{"labels":{"app.kubernetes.io/managed-by":"Helm"},"annotations":{"meta.helm.sh/release-name":"istio-base","meta.helm.sh/release-namespace":"istio-system"}}}'
+done
+
+# Install upstream Istio with Gateway API Inference Extension
+helmfile -f istio.helmfile.yaml sync
+
+# Verify installation
+oc get pods -n istio-system
+oc wait --for=condition=ready pod -l app=istiod -n istio-system --timeout=120s
+```
+
+### 4. Create Namespace and HuggingFace Token Secret
 ```bash
 # Create namespace
 oc create namespace ${NAMESPACE} --dry-run=client -o yaml | oc apply -f -
@@ -71,47 +90,39 @@ oc create secret generic llm-d-hf-token \
   -n ${NAMESPACE}
 ```
 
-## Deployment
+## Deployment (Updated Process)
 
-### Helmfile Deployment (Recommended)
+### Helmfile Deployment with Corrected Configuration
 
-This project uses a helmfile-based approach for infrastructure-style deployment. Navigate to the `inference-scheduling` directory:
+Navigate to the `inference-scheduling` directory and deploy:
 
 ```bash
 cd inference-scheduling
 
-# Use the automated helmfile deployment script (recommended)
-./deploy-helmfile.sh
-
-# Deploy with Istio environment
-./deploy-helmfile.sh --environment istio
-
-# Deploy to custom namespace
-./deploy-helmfile.sh --namespace my-namespace
-
-# Or use helmfile directly
+# Deploy with corrected chart versions and configuration
+export NAMESPACE=llm-d-inference-scheduling
 helmfile sync --namespace ${NAMESPACE}
 
-# Deploy with specific environment (e.g., Istio)
-helmfile sync --environment istio --namespace ${NAMESPACE}
-
-# Deploy with custom release name postfix
-export RELEASE_NAME_POSTFIX=my-custom-name
-helmfile sync --namespace ${NAMESPACE}
+# CRITICAL: Apply HTTPRoute manually (required by newer guide)
+oc apply -f httproute.yaml
 ```
 
-**Note**: The helmfile automatically uses the `--namespace` flag value or falls back to `llm-d-inference-scheduling` if not specified. The default environment uses Istio gateway configuration. All resources will be deployed to the specified namespace.
+**Note**: The helmfile now uses:
+- **llm-d-infra v1.3.0** (downgraded for compatibility)
+- **llm-d-modelservice v0.2.7** (downgraded for schema compatibility)  
+- **ghcr.io/llm-d/llm-d-dev:pr-170** (dev build with latest features)
 
-### Deployment Timeline
+### Deployment Timeline (Updated)
 
 **Expected deployment phases:**
-1. **Infrastructure (30-60s)**: Istio Gateway and basic networking
-2. **GAIE Scheduler (30-60s)**: Intelligent inference routing (may require CRD installation)
-3. **Model Service (5-15min)**: vLLM pods with model download (depends on GPU availability)
+1. **Gateway Provider Setup (5-10min)**: Istio installation and CRD setup
+2. **Infrastructure (30-60s)**: Gateway and networking components
+3. **GAIE Scheduler (30-60s)**: Intelligent inference routing
+4. **Model Service (5-15min)**: vLLM pods with model download
 
-**GPU Initialization**: If GPU device plugins are not ready, model service pods will remain in `Pending` state until GPU nodes are available. This can take 5-10 minutes on first setup.
+**Gateway Initialization**: The gateway will show "PROGRAMMED: True" when ready, and the gateway service will be created automatically.
 
-## Verification and Testing
+## Verification and Testing (Reference Guide Compliant)
 
 ### Check Deployment Status
 ```bash
@@ -121,52 +132,54 @@ helm list -n ${NAMESPACE}
 echo "=== Pod Status ==="
 oc get pods -n ${NAMESPACE}
 
-echo "=== PVC Status ==="
-oc get pvc -n ${NAMESPACE}
+echo "=== Gateway Status ==="
+oc get gateway,httproute,inferencepool -n ${NAMESPACE}
 
 echo "=== Services ==="
 oc get svc -n ${NAMESPACE}
 
-echo "=== HTTPRoute Status ==="
-oc get httproutes -n ${NAMESPACE}
+# Verify gateway service exists
+GATEWAY_SVC=$(oc get svc -n "${NAMESPACE}" -o yaml | yq '.items[] | select(.metadata.name | test(".*-inference-gateway(-.*)?$")).metadata.name' | head -n1)
+echo "Gateway Service Found: $GATEWAY_SVC"
 ```
 
-### Test Inference
+### Test Inference (Following getting-started-inferencing.md)
 
-#### Automated Testing (Recommended)
 ```bash
-# Navigate to inference-scheduling directory
-cd inference-scheduling
+# Set up environment variables
+export NAMESPACE=llm-d-inference-scheduling
+GATEWAY_SVC=$(oc get svc -n "${NAMESPACE}" -o yaml | yq '.items[] | select(.metadata.name | test(".*-inference-gateway(-.*)?$")).metadata.name' | head -n1)
 
-# Run comprehensive tests including health check and inference
-./test.sh
+# Port forward to gateway (reference guide approach)
+export ENDPOINT="http://localhost:8000"
+oc port-forward -n ${NAMESPACE} service/${GATEWAY_SVC} 8000:80 &
 
-# Run performance test with multiple concurrent requests
-./test.sh --perf
+# Test /v1/models endpoint
+curl -s ${ENDPOINT}/v1/models -H "Content-Type: application/json" | jq
 
-# Test with different model
-./test.sh --model "Qwen/Qwen3-32B"
-```
+# Test /v1/completions endpoint
+curl -X POST ${ENDPOINT}/v1/completions \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "meta-llama/Llama-3.1-8B-Instruct",
+    "prompt": "How are you today?",
+    "max_tokens": 10
+  }' | jq
 
-#### Manual Testing
-```bash
-# Port forward to gateway
-oc port-forward svc/infra-inference-scheduling-inference-gateway-istio 8080:80 -n ${NAMESPACE} &
-
-# Test inference request
-curl -X POST "http://localhost:8080/v1/chat/completions" \
+# Test /v1/chat/completions endpoint
+curl -X POST ${ENDPOINT}/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "Qwen/Qwen3-32B",
+    "model": "meta-llama/Llama-3.1-8B-Instruct",
     "messages": [
       {
         "role": "user", 
-        "content": "Hello! Can you tell me about GPU acceleration?"
+        "content": "Hello! What is machine learning?"
       }
     ],
-    "max_tokens": 100,
+    "max_tokens": 50,
     "temperature": 0.7
-  }'
+  }' | jq
 
 # Stop port forward
 kill %1
@@ -303,14 +316,42 @@ curl http://localhost:9090/metrics | grep -E "score|queue|cache"
 oc logs <model-pod-name> -c vllm -n ${NAMESPACE} | grep -E "queue|requests|utilization"
 ```
 
-## Troubleshooting
+## Troubleshooting (Updated)
+
+### Critical Gateway Issues (RESOLVED)
+
+1. **Gateway shows "Unknown" status**: 
+   - **Root Cause**: OpenShift Service Mesh lacks Gateway API Inference Extension support
+   - **Solution**: Install upstream Istio with `SUPPORT_GATEWAY_API_INFERENCE_EXTENSION=true`
+   ```bash
+   # Remove OpenShift Service Mesh and install upstream Istio
+   cd h100-dagray2/llm-d/guides/prereq/gateway-provider
+   helmfile -f istio.helmfile.yaml sync
+   ```
+
+2. **Gateway service not created**:
+   - **Root Cause**: Missing Gateway API controller or incorrect Istio version
+   - **Solution**: Ensure upstream Istio is installed and gateway shows "PROGRAMMED: True"
+   ```bash
+   oc get gateway -n ${NAMESPACE}  # Should show PROGRAMMED: True
+   oc get svc -n ${NAMESPACE} | grep gateway  # Should show gateway service
+   ```
+
+3. **Schema validation errors**:
+   - **Root Cause**: Chart version incompatibility (v0.2.9 has stricter schema)
+   - **Solution**: Use compatible chart versions (v1.3.0 + v0.2.7)
+   ```bash
+   # Ensure helmfile.yaml.gotmpl has correct versions:
+   # llm-d-infra: v1.3.0
+   # llm-d-modelservice: v0.2.7
+   ```
 
 ### Common Issues
 
-1. **Missing CRDs**: If deployment fails with "no matches for kind InferencePool", install the required CRDs:
+1. **Missing CRDs**: Use the gateway provider dependencies script:
    ```bash
-   kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api-inference-extension/main/config/crd/bases/inference.networking.x-k8s.io_inferencepools.yaml
-   kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api-inference-extension/v0.5.1/config/crd/bases/inference.networking.x-k8s.io_inferencemodels.yaml
+   cd h100-dagray2/llm-d/guides/prereq/gateway-provider
+   ./install-gateway-provider-dependencies.sh
    ```
 
 2. **GAIE Pod CrashLoopBackOff**: Usually caused by missing InferenceModel CRD. Install CRDs and restart:
@@ -318,7 +359,15 @@ oc logs <model-pod-name> -c vllm -n ${NAMESPACE} | grep -E "queue|requests|utili
    oc rollout restart deployment gaie-inference-scheduling-epp -n ${NAMESPACE}
    ```
 
-3. **Pods Pending - Insufficient GPU**: Check GPU device plugin status:
+3. **Model Compatibility Issues**: 
+   - **Apertus models**: Not supported by current vLLM version (use Llama or Qwen models)
+   - **Large models**: Ensure sufficient GPU memory and storage
+   ```bash
+   # Check model compatibility
+   oc logs <model-pod> -c vllm -n ${NAMESPACE} --tail=20
+   ```
+
+4. **Pods Pending - Insufficient GPU**: Check GPU device plugin status:
    ```bash
    # Check GPU operator pods
    oc get pods -A | grep -i gpu
@@ -330,38 +379,80 @@ oc logs <model-pod-name> -c vllm -n ${NAMESPACE} | grep -E "queue|requests|utili
    oc get pods -n nvidia-gpu-operator | grep device-plugin
    ```
 
-4. **Gateway API CRDs Forbidden**: On OpenShift, Gateway API CRDs are managed by the Ingress Operator (this is normal)
+5. **HTTPRoute not working**: Apply manually after helmfile deployment:
+   ```bash
+   oc apply -f httproute.yaml
+   ```
 
-5. **GPU Memory Issues**: Reduce `--max-model-len` or `--gpu-memory-utilization` in values.yaml
-6. **Storage Issues**: Check PVC status and node storage availability
-7. **Model Loading**: Verify HuggingFace token and network connectivity
+6. **GPU Memory Issues**: Reduce model parameters or GPU utilization in values.yaml
+7. **Storage Issues**: Check PVC status and node storage availability  
+8. **Model Loading**: Verify HuggingFace token and network connectivity
 
-### Debug Commands
+### Debug Commands (Updated)
 ```bash
+# Check gateway status (CRITICAL)
+oc get gateway -n ${NAMESPACE}  # Should show PROGRAMMED: True
+oc get svc -n ${NAMESPACE} | grep gateway  # Should show gateway service
+
+# Verify complete routing stack
+oc get gateway,httproute,inferencepool -n ${NAMESPACE}
+
 # Check pod logs
 oc logs <pod-name> -c vllm -n ${NAMESPACE} --tail=50
 
 # Check GAIE scheduler logs
 oc logs deployment/gaie-inference-scheduling-epp -n ${NAMESPACE} --tail=20
 
-# Check GPU availability
-oc describe nodes | grep -A 10 -B 5 "nvidia.com/gpu"
+# Check Istio controller logs
+oc logs deployment/istiod -n istio-system --tail=20
 
-# Verify model download to PVC
-oc exec <pod-name> -c vllm -n ${NAMESPACE} -- df -h /model-cache
+# Test gateway service discovery (reference guide approach)
+GATEWAY_SVC=$(oc get svc -n "${NAMESPACE}" -o yaml | yq '.items[] | select(.metadata.name | test(".*-inference-gateway(-.*)?$")).metadata.name' | head -n1)
+echo "Gateway Service Found: $GATEWAY_SVC"
 
-# Check CRD installation
-kubectl get crd | grep inference
+# Verify Gateway API CRDs
+oc get crd | grep -E "(gateway|inference)"
 
-# Monitor GPU operator initialization
-oc get pods -n nvidia-gpu-operator
+# Check Istio installation
+oc get pods -n istio-system
+helm list -n istio-system
+
+# Test inference endpoints through gateway
+oc port-forward -n ${NAMESPACE} service/${GATEWAY_SVC} 8000:80 &
+curl -s http://localhost:8000/v1/models | jq '.data[].id'
+kill %1
 
 # Check deployment status with helmfile
 cd inference-scheduling
 helmfile status --namespace ${NAMESPACE}
+```
 
-# Test helmfile parsing
-helmfile list --namespace ${NAMESPACE}
+### Success Verification Checklist
+
+✅ **Gateway Infrastructure Working:**
+```bash
+# Gateway should show PROGRAMMED: True
+oc get gateway -n ${NAMESPACE}
+
+# Gateway service should exist
+oc get svc -n ${NAMESPACE} | grep "infra-inference-scheduling-inference-gateway-istio"
+
+# Gateway pod should be running
+oc get pods -n ${NAMESPACE} | grep "infra-inference-scheduling-inference-gateway-istio"
+```
+
+✅ **Reference Guide Compliance:**
+```bash
+# Service discovery should work
+GATEWAY_SVC=$(oc get svc -n "${NAMESPACE}" -o yaml | yq '.items[] | select(.metadata.name | test(".*-inference-gateway(-.*)?$")).metadata.name' | head -n1)
+echo "Found: $GATEWAY_SVC"  # Should output the gateway service name
+
+# All API endpoints should work through gateway
+export ENDPOINT="http://localhost:8000"
+oc port-forward -n ${NAMESPACE} service/${GATEWAY_SVC} 8000:80 &
+curl -s ${ENDPOINT}/v1/models | jq  # Should return model list
+curl -X POST ${ENDPOINT}/v1/completions -H 'Content-Type: application/json' -d '{"model":"meta-llama/Llama-3.1-8B-Instruct","prompt":"Test","max_tokens":5}' | jq
+kill %1
 ```
 
 ## Cleanup
@@ -455,15 +546,336 @@ This well-lit path includes several automation scripts to simplify deployment an
 - **Usage**: `cd inference-scheduling && ./cleanup.sh [OPTIONS]`
 - **Options**: `--namespace`, `--force`, `--remove-namespace`, `--help`
 
-### Quick Start Commands
+## 🎯 Working Configuration Summary
+
+**This deployment has been verified to work on OpenShift with the following key components:**
+
+### **✅ Successful Architecture:**
+```
+Client → Istio Gateway → HTTPRoute → InferencePool (GAIE) → Model Pods
+```
+
+### **✅ Key Configuration Files:**
+- `helmfile.yaml.gotmpl` - Chart versions: infra v1.3.0 + modelservice v0.2.7
+- `ms-inference-scheduling/values.yaml` - Model: Llama-3.1-8B-Instruct + pr-170 image
+- `gateway-configurations/istio.yaml` - LoadBalancer service type
+- `httproute.yaml` - Manual application required
+
+### **✅ Critical Success Factors:**
+1. **Upstream Istio**: Required for Gateway API Inference Extension support
+2. **Chart Version Alignment**: Specific versions required for compatibility
+3. **Manual HTTPRoute**: Must be applied after helmfile deployment
+4. **Gateway Service**: Creates `infra-inference-scheduling-inference-gateway-istio`
+
+### **✅ Verification Commands:**
 ```bash
-# Complete deployment and testing workflow
-export HF_TOKEN=your_token_here
+# Quick verification that everything is working
+export NAMESPACE=llm-d-inference-scheduling
+
+# Check gateway is programmed
+oc get gateway -n ${NAMESPACE}  # PROGRAMMED: True
+
+# Check all pods running
+oc get pods -n ${NAMESPACE}  # All should be Running
+
+# Test inference
+GATEWAY_SVC=$(oc get svc -n "${NAMESPACE}" -o yaml | yq '.items[] | select(.metadata.name | test(".*-inference-gateway(-.*)?$")).metadata.name' | head -n1)
+echo "Gateway: $GATEWAY_SVC"  # Should find the service
+```
+
+### **🚀 Updated Quick Start Commands**
+```bash
+# Complete deployment and testing workflow (CORRECTED)
+export HF_TOKEN=$(cat ~/.keys/hf.key)
 export NAMESPACE=${NAMESPACE:-llm-d-inference-scheduling}
 
-cd inference-scheduling
-./deploy-helmfile.sh          # Deploy infrastructure
-./test.sh                     # Test deployment
-./test.sh --perf              # Run performance tests
-./cleanup.sh                  # Clean up when done
+# 1. Install Gateway Provider Dependencies
+cd h100-dagray2/llm-d/guides/prereq/gateway-provider
+./install-gateway-provider-dependencies.sh
+
+# 2. Install Upstream Istio (if OpenShift Service Mesh present)
+helmfile -f istio.helmfile.yaml sync
+
+# 3. Deploy LLM-D Stack
+cd ../../inference-scheduler-wlp/inference-scheduling
+helmfile sync --namespace ${NAMESPACE}
+oc apply -f httproute.yaml
+
+# 4. Test deployment (reference guide compliant)
+GATEWAY_SVC=$(oc get svc -n "${NAMESPACE}" -o yaml | yq '.items[] | select(.metadata.name | test(".*-inference-gateway(-.*)?$")).metadata.name' | head -n1)
+oc port-forward -n ${NAMESPACE} service/${GATEWAY_SVC} 8000:80 &
+curl -s http://localhost:8000/v1/models | jq
+kill %1
+
+# 5. Clean up when done
+./cleanup.sh
+```
+
+This configuration provides a **production-ready inference scheduling system** with intelligent routing, load balancing, and full Gateway API compliance following the reference documentation.
+
+## 📚 Complete Working Configuration Documentation
+
+### **✅ Verified Working Configuration Summary**
+
+**Chart Versions (aligned with newer guide):**
+- **llm-d-infra**: v1.3.0 
+- **llm-d-modelservice**: v0.2.7
+- **inferencepool**: v0.5.1
+
+**Model Configuration:**
+- **Model**: meta-llama/Llama-3.1-8B-Instruct (8B parameters)
+- **Image**: ghcr.io/llm-d/llm-d-dev:pr-170 (dev build)
+- **Replicas**: 4 (single GPU per replica)
+- **Storage**: 50Gi
+
+**Gateway Infrastructure:**
+- **Gateway**: infra-inference-scheduling-inference-gateway (PROGRAMMED: True)
+- **Service**: infra-inference-scheduling-inference-gateway-istio (ClusterIP)
+- **HTTPRoute**: llm-d-inference-scheduling (working)
+- **GAIE Scheduler**: gaie-inference-scheduling-epp (intelligent routing)
+
+### **🔧 Critical Issues Resolved**
+
+**1. ISTIO GATEWAY API SUPPORT:**
+- **Problem**: OpenShift Service Mesh lacked Gateway API Inference Extension support
+- **Solution**: Replaced with upstream Istio 1.28-alpha with `SUPPORT_GATEWAY_API_INFERENCE_EXTENSION=true`
+
+**2. CHART VERSION COMPATIBILITY:**
+- **Problem**: v0.2.9 modelservice chart had stricter schema validation
+- **Solution**: Downgraded to v0.2.7 and restored `routing.modelName` property
+
+**3. SERVICE TYPE CONFIGURATION:**
+- **Problem**: Gateway configured as ClusterIP instead of expected LoadBalancer
+- **Solution**: Updated `gateway-configurations/istio.yaml` with `service.type: LoadBalancer`
+
+**4. MISSING GATEWAY PROVIDER DEPENDENCIES:**
+- **Problem**: Missing Gateway API CRDs and GAIE CRDs
+- **Solution**: Applied `install-gateway-provider-dependencies.sh`
+
+**5. SERVICEMESH MEMBERSHIP:**
+- **Problem**: Namespace not in ServiceMesh member roll
+- **Solution**: Added ServiceMeshMember (later removed with ServiceMesh)
+
+### **📋 Complete Deployment Command Reference**
+
+```bash
+# 1. Install Gateway Provider Dependencies
+cd h100-dagray2/llm-d/guides/prereq/gateway-provider
+./install-gateway-provider-dependencies.sh
+
+# 2. Remove OpenShift Service Mesh (if present)
+oc delete servicemeshmember default -n llm-d-inference-scheduling || true
+oc delete servicemeshcontrolplane data-science-smcp -n istio-system || true
+
+# 3. Patch Istio CRDs for Helm ownership
+for crd in $(oc get crd | grep istio.io | awk '{print $1}'); do
+  oc patch crd $crd --type='merge' -p='{"metadata":{"labels":{"app.kubernetes.io/managed-by":"Helm"},"annotations":{"meta.helm.sh/release-name":"istio-base","meta.helm.sh/release-namespace":"istio-system"}}}'
+done
+
+# 4. Install Upstream Istio with Gateway API Inference Extension
+helmfile -f istio.helmfile.yaml sync
+
+# 5. Deploy LLM-D Stack
+cd ../../inference-scheduler-wlp/inference-scheduling
+export NAMESPACE=llm-d-inference-scheduling
+export HF_TOKEN=$(cat ~/.keys/hf.key)
+helmfile sync --namespace ${NAMESPACE}
+
+# 6. Apply HTTPRoute manually
+oc apply -f httproute.yaml
+```
+
+### **🧪 Complete Testing Reference (getting-started-inferencing.md Compliant)**
+
+```bash
+# Service Discovery (as per getting-started-inferencing.md)
+export NAMESPACE=llm-d-inference-scheduling
+GATEWAY_SVC=$(oc get svc -n "${NAMESPACE}" -o yaml | yq '.items[] | select(.metadata.name | test(".*-inference-gateway(-.*)?$")).metadata.name' | head -n1)
+echo "Gateway Service: $GATEWAY_SVC"
+
+# Port Forward to Gateway
+export ENDPOINT="http://localhost:8000"
+oc port-forward -n ${NAMESPACE} service/${GATEWAY_SVC} 8000:80 &
+
+# Test /v1/models endpoint
+curl -s ${ENDPOINT}/v1/models -H "Content-Type: application/json" | jq
+
+# Test /v1/completions endpoint
+curl -X POST ${ENDPOINT}/v1/completions -H 'Content-Type: application/json' -d '{
+  "model": "meta-llama/Llama-3.1-8B-Instruct",
+  "prompt": "How are you today?",
+  "max_tokens": 10
+}' | jq
+
+# Test /v1/chat/completions endpoint
+curl -X POST ${ENDPOINT}/v1/chat/completions -H "Content-Type: application/json" -d '{
+  "model": "meta-llama/Llama-3.1-8B-Instruct",
+  "messages": [{"role": "user", "content": "Hello! What is machine learning?"}],
+  "max_tokens": 50,
+  "temperature": 0.7
+}' | jq
+
+# Stop port forward
+kill %1
+```
+
+### **📊 Expected Resources After Successful Deployment**
+
+**PODS:**
+- `gaie-inference-scheduling-epp-*` (1/1 Running) - GAIE scheduler
+- `infra-inference-scheduling-inference-gateway-istio-*` (1/1 Running) - Gateway pod
+- `ms-inference-scheduling-llm-d-modelservice-decode-*` (2/2 Running) x4 - Model service pods
+
+**SERVICES:**
+- `gaie-inference-scheduling-epp` (ClusterIP 9002/9090) - GAIE scheduler
+- `infra-inference-scheduling-inference-gateway-istio` (ClusterIP 15021/80) - Gateway service
+
+**DEPLOYMENTS:**
+- `gaie-inference-scheduling-epp` (1/1 Available)
+- `infra-inference-scheduling-inference-gateway-istio` (1/1 Available)
+- `ms-inference-scheduling-llm-d-modelservice-decode` (4/4 Available)
+
+**GATEWAY API RESOURCES:**
+- **Gateway**: infra-inference-scheduling-inference-gateway (PROGRAMMED: True)
+- **HTTPRoute**: llm-d-inference-scheduling (attached to gateway)
+- **InferencePool**: gaie-inference-scheduling (targeting model pods)
+
+### **🔧 Key Configuration Files Documentation**
+
+**1. helmfile.yaml.gotmpl:**
+- llm-d-infra: v1.3.0 (downgraded for compatibility)
+- llm-d-modelservice: v0.2.7 (downgraded for schema compatibility)
+- Removed monitoring override for clean deployment
+
+**2. ms-inference-scheduling/values.yaml:**
+- Model: meta-llama/Llama-3.1-8B-Instruct (8B model)
+- Image: ghcr.io/llm-d/llm-d-dev:pr-170 (dev build with latest features)
+- Replicas: 4 (optimized for throughput)
+- Args: Simplified to match newer guide (removed production optimizations)
+- Added back routing.modelName for v0.2.7 compatibility
+
+**3. gateway-configurations/istio.yaml:**
+- Added service.type: LoadBalancer (required by getting-started guide)
+- Kept destinationRule configuration for proper routing
+
+**4. httproute.yaml:**
+- Applied manually as required by newer guide
+- Routes to InferencePool for intelligent scheduling
+
+### **🧪 Benchmark Integration with Multiturn Support**
+
+The benchmark job has been updated to use our working LLM-D service with [multiturn benchmarking support from PR #211](https://github.com/vllm-project/guidellm/pull/211/):
+
+**Dockerfile Updates (`bench/Dockerfile`):**
+```dockerfile
+# Builds guidellm with multiturn support from PR #211
+RUN git clone https://github.com/vllm-project/guidellm.git \
+ && cd guidellm \
+ && git fetch origin pull/211/head:feat/multiturn \
+ && git checkout feat/multiturn \
+ && echo "Building guidellm with multiturn support from PR #211..." \
+ && python -m build --wheel --no-isolation
+```
+
+**Benchmark Job Updates (`bench/guidellm-job.yml`):**
+- **Target**: `http://infra-inference-scheduling-inference-gateway-istio.llm-d-inference-scheduling.svc.cluster.local`
+- **Model**: `meta-llama/Llama-3.1-8B-Instruct` (our working model)
+- **Endpoint**: `/v1/chat/completions` (full chat interface)
+- **Multiturn**: 3-turn conversations with 16 concurrent users
+- **Duration**: 120 seconds for comprehensive testing
+- **Tokens**: 256 prompt tokens, 256 output tokens per turn
+- **Metrics**: Monitors `llm-d-inference-scheduling` namespace and Istio metrics
+
+### **Running the Benchmark**
+
+```bash
+# Create benchmark namespace and secrets
+oc create namespace bench
+oc create secret generic hf-token-secret --from-literal=HF_TOKEN=${HF_TOKEN} -n bench
+
+# Apply the benchmark job
+oc apply -f bench/guidellm-job.yml
+
+# Monitor benchmark progress
+oc logs -f job/guidellm-benchmark -n bench -c benchmark
+
+# Check results
+oc logs job/guidellm-benchmark -n bench -c benchmark | grep -E "(Benchmark|Results|complete)"
+
+# Get benchmark results
+oc exec $(oc get pods -n bench -l job-name=guidellm-benchmark -o jsonpath='{.items[0].metadata.name}') -n bench -c sidecar -- ls -la /output
+```
+
+### **What the Benchmark Tests**
+
+**1. Service Accessibility:**
+- Verifies LLM-D service is reachable from within cluster
+- Tests `/v1/models` endpoint for model availability
+- Validates chat completions endpoint functionality
+
+**2. Multiturn Conversations:**
+- Tests 3-turn conversation flows (PR #211 feature)
+- Measures conversation context handling
+- Evaluates multi-exchange performance
+
+**3. Gateway Performance:**
+- Tests complete routing stack: Gateway → HTTPRoute → InferencePool → Model Pods
+- Measures GAIE intelligent routing decisions
+- Evaluates load balancing across 4 model replicas
+
+**4. Production Metrics:**
+- **GPU Utilization**: During actual inference workloads
+- **Container Metrics**: CPU, memory, network for LLM-D namespace
+- **Istio Metrics**: Request rates and latency through gateway
+- **vLLM Metrics**: Model-specific performance data
+
+This benchmark provides comprehensive testing of the complete LLM-D inference scheduling system with real workloads and the latest guidellm features.
+
+
+
+### **🔍 Advanced Troubleshooting Guide**
+
+**Gateway shows "Unknown" status:**
+- Check if upstream Istio is installed with Gateway API support
+- Verify `SUPPORT_GATEWAY_API_INFERENCE_EXTENSION=true` in istiod config
+- Ensure namespace is not in OpenShift Service Mesh member roll
+
+**Model pods in CrashLoopBackOff:**
+- Check model compatibility with vLLM version (Apertus models not supported)
+- Verify HF_TOKEN secret exists and is valid
+- Check GPU availability and resource requests
+
+**Schema validation errors:**
+- Ensure chart versions are compatible (v1.3.0 + v0.2.7)
+- Check for deprecated properties in values.yaml
+- Verify routing.modelName exists for older chart versions
+
+**Gateway service not created:**
+- Verify Gateway API CRDs are installed
+- Check if Gateway controller is processing resources
+- Ensure proper service type configuration
+
+**HTTPRoute not working:**
+- Apply HTTPRoute manually after helmfile deployment
+- Verify InferencePool exists and is ready
+- Check gateway parentRef name matches actual gateway
+
+### **✅ Quick Verification Commands**
+
+```bash
+# Check all components
+export NAMESPACE=llm-d-inference-scheduling
+helm list -n ${NAMESPACE}
+oc get all -n ${NAMESPACE}
+oc get gateway,httproute,inferencepool -n ${NAMESPACE}
+
+# Verify gateway functionality
+GATEWAY_SVC=$(oc get svc -n "${NAMESPACE}" -o yaml | yq '.items[] | select(.metadata.name | test(".*-inference-gateway(-.*)?$")).metadata.name' | head -n1)
+echo "Gateway Service Found: $GATEWAY_SVC"
+
+# Test inference endpoints
+oc port-forward -n ${NAMESPACE} service/${GATEWAY_SVC} 8000:80 &
+sleep 3
+curl -s http://localhost:8000/v1/models | jq '.data[].id'
+kill %1
 ``` 

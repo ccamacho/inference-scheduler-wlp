@@ -1,6 +1,7 @@
 gateway:
   gatewayClassName: istio
-  # service.type defaults to ClusterIP for Istio (working configuration)
+  service:
+    type: LoadBalancer  # Default as per getting-started-inferencing.md
   destinationRule:
     enabled: true
     trafficPolicy:

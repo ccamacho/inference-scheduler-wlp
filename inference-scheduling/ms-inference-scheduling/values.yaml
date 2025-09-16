@@ -8,7 +8,6 @@ modelArtifacts:
   # Use PVC for persistent model storage
   volume:
     existingClaim: "model-storage"
-
 routing:
   modelName: meta-llama/Llama-3.1-8B-Instruct
   servicePort: 8000
@@ -46,20 +45,16 @@ decode:
       interval: "30s"
   containers:
   - name: "vllm"
-    image: "ghcr.io/llm-d/llm-d:v0.2.0"
+    image: "ghcr.io/llm-d/llm-d-dev:pr-170"
+    # image: "ghcr.io/llm-d/llm-d:v0.2.0" # WHen to use the latest?
     modelCommand: vllmServe
     args:
       - "--enforce-eager"
-      - "--host=0.0.0.0"               # Explicitly bind to all IPv4 addresses (fixes dual-stack issue)
-      - "--max-model-len=4096"         # Higher context for 8B model (much smaller memory footprint)
-      - "--tensor-parallel-size=1"     # Single GPU per pod (simpler, more reliable)
-      - "--gpu-memory-utilization=0.80" # Higher utilization for smaller 8B model
-      # --block-size removed (not needed for basic plugins-v2.yaml configuration)
       - "--kv-transfer-config"
       - '{"kv_connector":"NixlConnector", "kv_role":"kv_both"}'
     env:
       - name: CUDA_VISIBLE_DEVICES
-        value: "0"  # Single GPU per pod
+        value: "0"
       - name: UCX_TLS
         value: "cuda_ipc,cuda_copy,tcp"
       - name: VLLM_NIXL_SIDE_CHANNEL_HOST
@@ -78,7 +73,7 @@ decode:
         protocol: TCP
     resources:
       limits:
-        nvidia.com/gpu: "1"  # Single GPU per pod
+        nvidia.com/gpu: "1"
       requests:
         nvidia.com/gpu: "1"
     mountModelVolume: true
