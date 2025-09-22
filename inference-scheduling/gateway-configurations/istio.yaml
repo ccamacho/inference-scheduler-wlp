@@ -1,7 +1,8 @@
 gateway:
   gatewayClassName: istio
   service:
-    type: LoadBalancer  # Default as per getting-started-inferencing.md
+    # type: LoadBalancer  # Default as per getting-started-inferencing.md
+    type: ClusterIP  # Internal cluster access only
   destinationRule:
     enabled: true
     trafficPolicy:
