@@ -16,33 +16,33 @@ inferenceExtension:
   extProcPort: 9002
   
   # OPTION 1: Use default plugins-v2.yaml (current working setup)
-  pluginsConfigFile: "plugins-v2-custom.yaml"
-  pluginsCustomConfig:
-    plugins-v2-custom.yaml: |
-      apiVersion: inference.networking.x-k8s.io/v1alpha1
-      kind: EndpointPickerConfig
-      plugins:
-      - type: queue-scorer
-      - type: kv-cache-scorer
-      - type: prefix-cache-scorer
-        parameters:
-          hashBlockSize: 64
-          maxPrefixBlocksToMatch: 256
-          lruCapacityPerServer: 31250
-      - type: max-score-picker
-        parameters:
-          maxNumOfEndpoints: 1
-      - type: single-profile-handler
-      schedulingProfiles:
-      - name: default
-        plugins:
-        - pluginRef: queue-scorer
-          weight: 1
-        - pluginRef: kv-cache-scorer
-          weight: 1
-        - pluginRef: prefix-cache-scorer
-          weight: 1
-        - pluginRef: max-score-picker
+  # pluginsConfigFile: "plugins-v2-custom.yaml"
+  # pluginsCustomConfig:
+  #   plugins-v2-custom.yaml: |
+  #     apiVersion: inference.networking.x-k8s.io/v1alpha1
+  #     kind: EndpointPickerConfig
+  #     plugins:
+  #     - type: queue-scorer
+  #     - type: kv-cache-scorer
+  #     - type: prefix-cache-scorer
+  #       parameters:
+  #         hashBlockSize: 64
+  #         maxPrefixBlocksToMatch: 256
+  #         lruCapacityPerServer: 31250
+  #     - type: max-score-picker
+  #       parameters:
+  #         maxNumOfEndpoints: 1
+  #     - type: single-profile-handler
+  #     schedulingProfiles:
+  #     - name: default
+  #       plugins:
+  #       - pluginRef: queue-scorer
+  #         weight: 1
+  #       - pluginRef: kv-cache-scorer
+  #         weight: 1
+  #       - pluginRef: prefix-cache-scorer
+  #         weight: 1
+  #       - pluginRef: max-score-picker
 
 
   # OPTION 2: Override with custom scorers - uncomment and modify as needed
@@ -77,38 +77,24 @@ inferenceExtension:
   #             weight: 1.0
   #           - pluginRef: max-score-picker
   
-  # OPTION 3: Simple round-robin (no intelligence) - uncomment to use
-  # pluginsConfigFile: "round-robin.yaml"
-  # pluginsCustomConfig:
-  #   round-robin.yaml: |
-  #     apiVersion: inference.networking.x-k8s.io/v1alpha1
-  #     kind: EndpointPickerConfig
-  #     plugins:
-  #       - type: single-profile-handler
-  #       - type: round-robin-picker
-  #     schedulingProfiles:
-  #       - name: default
-  #         plugins:
-  #           - pluginRef: round-robin-picker
-  
-  # OPTION 4: Queue-only scoring - ACTIVE EXAMPLE
-  # pluginsConfigFile: "queue-only.yaml"
-  # pluginsCustomConfig:
-  #   queue-only.yaml: |
-  #     apiVersion: inference.networking.x-k8s.io/v1alpha1
-  #     kind: EndpointPickerConfig
-  #     plugins:
-  #       - type: single-profile-handler
-  #       - type: queue-scorer
-  #       - type: max-score-picker
-  #     schedulingProfiles:
-  #       - name: default
-  #         plugins:
-  #           - pluginRef: queue-scorer
-  #             weight: 1.0
-  #           - pluginRef: max-score-picker
+  # OPTION 3: Queue-only scoring - ACTIVE EXAMPLE
+  pluginsConfigFile: "queue-only.yaml"
+  pluginsCustomConfig:
+    queue-only.yaml: |
+      apiVersion: inference.networking.x-k8s.io/v1alpha1
+      kind: EndpointPickerConfig
+      plugins:
+        - type: single-profile-handler
+        - type: queue-scorer
+        - type: max-score-picker
+      schedulingProfiles:
+        - name: default
+          plugins:
+            - pluginRef: queue-scorer
+              weight: 1.0
+            - pluginRef: max-score-picker
 
-  # Option 5: With the newer image the epp pod crash as they changes the cli params --PoolName vs --pool-name
+  # Option 4: With the newer image the epp pod crash as they changes the cli params --PoolName vs --pool-name
   # pluginsConfigFile: "weighted-random-picker.yaml"
   # pluginsCustomConfig:
   #   weighted-random-picker.yaml: |
