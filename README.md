@@ -74,6 +74,7 @@ done
 # Install upstream Istio with Gateway API Inference Extension
 helmfile -f istio.helmfile.yaml sync
 
+
 # Verify installation
 oc get pods -n istio-system
 oc wait --for=condition=ready pod -l app=istiod -n istio-system --timeout=120s

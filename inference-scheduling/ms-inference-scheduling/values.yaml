@@ -52,11 +52,14 @@ decode:
       - "--enforce-eager"
       - "--kv-transfer-config"
       - '{"kv_connector":"NixlConnector", "kv_role":"kv_both"}'
+      - "--enable-lora"
     env:
       - name: CUDA_VISIBLE_DEVICES
         value: "0"
       - name: UCX_TLS
         value: "cuda_ipc,cuda_copy,tcp"
+      - name: VLLM_ALLOW_RUNTIME_LORA_UPDATING
+        value: "true"
       - name: VLLM_NIXL_SIDE_CHANNEL_HOST
         valueFrom:
           fieldRef:
