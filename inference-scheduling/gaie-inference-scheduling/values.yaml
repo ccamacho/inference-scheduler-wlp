@@ -6,8 +6,8 @@ inferenceExtension:
     ###################
     name: llm-d-inference-scheduler
     hub: ghcr.io/llm-d
-    # tag: v0.3.0-rc.2 # Working: v0.2.1
-    tag: v0.2.1
+    tag: v0.3.1-rc.1 # Working: v0.2.1
+    # tag: v0.2.1
     ###################
     # name: epp
     # hub: registry.k8s.io/gateway-api-inference-extension
@@ -99,20 +99,8 @@ inferenceExtension:
           weight: 1
         - pluginRef: max-score-picker
 
-
-# 2025-09-23T08:50:09.651480257Z 2025-09-23T08:50:09Z	LEVEL(-5)	metrics/pod_metrics.go:121	Failed to refreshed metrics:	{"pod": {"name":"ms-inference-scheduling-llm-d-modelservice-decode-695f9bd8cjbm7","namespace":"llm-d-inference-scheduling"}, "err": "metric family \"vllm:lora_requests_info\" not found"}
-# 2025-09-23T08:50:09.651489638Z 2025-09-23T08:50:09Z	LEVEL(-5)	metrics/pod_metrics.go:133	Refreshed metrics	{"pod": {"name":"ms-inference-scheduling-llm-d-modelservice-decode-695f9bd8cjbm7","namespace":"llm-d-inference-scheduling"}, "updated": "{ActiveModels:map[] WaitingModels:map[] MaxActiveModels:0 RunningQueueSize:0 WaitingQueueSize:0 KVCacheUsagePercent:0 KvCacheMaxTokenCapacity:0 UpdateTime:2025-09-23 08:50:09.651469232 +0000 UTC m=+870.769831645}"}
-# 2025-09-23T08:50:09.668471954Z 2025-09-23T08:50:09Z	LEVEL(-5)	metrics/pod_metrics.go:121	Failed to refreshed metrics:	{"pod": {"name":"ms-inference-scheduling-llm-d-modelservice-decode-695f9bd8h4st4","namespace":"llm-d-inference-scheduling"}, "err": "metric family \"vllm:lora_requests_info\" not found"}
-# 2025-09-23T08:50:09.668471954Z 2025-09-23T08:50:09Z	LEVEL(-5)	metrics/pod_metrics.go:133	Refreshed metrics	{"pod": {"name":"ms-inference-scheduling-llm-d-modelservice-decode-695f9bd8h4st4","namespace":"llm-d-inference-scheduling"}, "updated": "{ActiveModels:map[] WaitingModels:map[] MaxActiveModels:0 RunningQueueSize:0 WaitingQueueSize:0 KVCacheUsagePercent:0 KvCacheMaxTokenCapacity:0 UpdateTime:2025-09-23 08:50:09.668460625 +0000 UTC m=+870.786823040}"}
-# 2025-09-23T08:50:09.683373224Z 2025-09-23T08:50:09Z	LEVEL(-5)	metrics/pod_metrics.go:121	Failed to refreshed metrics:	{"pod": {"name":"ms-inference-scheduling-llm-d-modelservice-decode-695f9bd8qwxlt","namespace":"llm-d-inference-scheduling"}, "err": "metric family \"vllm:lora_requests_info\" not found"}
-# 2025-09-23T08:50:09.683373224Z 2025-09-23T08:50:09Z	LEVEL(-5)	metrics/pod_metrics.go:133	Refreshed metrics	{"pod": {"name":"ms-inference-scheduling-llm-d-modelservice-decode-695f9bd8qwxlt","namespace":"llm-d-inference-scheduling"}, "updated": "{ActiveModels:map[] WaitingModels:map[] MaxActiveModels:0 RunningQueueSize:0 WaitingQueueSize:0 KVCacheUsagePercent:0 KvCacheMaxTokenCapacity:0 UpdateTime:2025-09-23 08:50:09.683361835 +0000 UTC m=+870.801724248}"}
-# 2025-09-23T08:50:09.694489691Z 2025-09-23T08:50:09Z	LEVEL(-5)	metrics/pod_metrics.go:121	Failed to refreshed metrics:	{"pod": {"name":"ms-inference-scheduling-llm-d-modelservice-decode-695f9bd878bl8","namespace":"llm-d-inference-scheduling"}, "err": "metric family \"vllm:lora_requests_info\" not found"}
-# 2025-09-23T08:50:09.694489691Z 2025-09-23T08:50:09Z	LEVEL(-5)	metrics/pod_metrics.go:133	Refreshed metrics	{"pod": {"name":"ms-inference-scheduling-llm-d-modelservice-decode-695f9bd878bl8","namespace":"llm-d-inference-scheduling"}, "updated": "{ActiveModels:map[] WaitingModels:map[] MaxActiveModels:0 RunningQueueSize:0 WaitingQueueSize:0 KVCacheUsagePercent:0 KvCacheMaxTokenCapacity:0 UpdateTime:2025-09-23 08:50:09.694478581 +0000 UTC m=+870.812840994}"}
-# 2025-09-23T08:50:09.700516030Z 2025-09-23T08:50:09Z	LEVEL(-5)	metrics/pod_metrics.go:121	Failed to refreshed metrics:	{"pod": {"name":"ms-inference-scheduling-llm-d-modelservice-decode-695f9bd8cjbm7","namespace":"llm-d-inference-scheduling"}, "err": "metric family \"vllm:lora_requests_info\" not found"}
-# 2025-09-23T08:50:09.700516030Z 2025-09-23T08:50:09Z	LEVEL(-5)	metrics/pod_metrics.go:133	Refreshed metrics	{"pod": {"name":"ms-inference-scheduling-llm-d-modelservice-decode-695f9bd8cjbm7","namespace":"llm-d-inference-scheduling"}, "updated": "{ActiveModels:map[] WaitingModels:map[] MaxActiveModels:0 RunningQueueSize:0 WaitingQueueSize:0 KVCacheUsagePercent:0 KvCacheMaxTokenCapacity:0 UpdateTime:2025-09-23 08:50:09.700505 +0000 UTC m=+870.818867414}"}
-
-
 inferencePool:
+  apiVersion: inference.networking.x-k8s.io/v1alpha2
   targetPortNumber: 8000
   modelServerType: vllm
   modelServers:
