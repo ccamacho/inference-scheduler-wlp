@@ -71,33 +71,61 @@ inferenceExtension:
   #       - pluginRef: random-picker
 
   # OPTION 2: v2 custom scorers
-  pluginsConfigFile: "plugins-v2-custom.yaml"
+  # pluginsConfigFile: "plugins-v2-custom.yaml"
+  # pluginsCustomConfig:
+  #   plugins-v2-custom.yaml: |
+  #     apiVersion: inference.networking.x-k8s.io/v1alpha1
+  #     kind: EndpointPickerConfig
+  #     plugins:
+  #     - type: queue-scorer
+  #     - type: kv-cache-scorer
+  #     - type: prefix-cache-scorer
+  #       parameters:
+  #         hashBlockSize: 64
+  #         maxPrefixBlocksToMatch: 256
+  #         lruCapacityPerServer: 31250
+  #     - type: max-score-picker
+  #       parameters:
+  #         maxNumOfEndpoints: 1
+  #     - type: single-profile-handler
+  #     schedulingProfiles:
+  #     - name: default
+  #       plugins:
+  #       - pluginRef: queue-scorer
+  #         weight: 1
+  #       - pluginRef: kv-cache-scorer
+  #         weight: 1
+  #       - pluginRef: prefix-cache-scorer
+  #         weight: 1
+  #       - pluginRef: max-score-picker
+
+  pluginsConfigFile: "prefix-cache-tracking-config.yaml"
   pluginsCustomConfig:
-    plugins-v2-custom.yaml: |
+    prefix-cache-tracking-config.yaml: |
       apiVersion: inference.networking.x-k8s.io/v1alpha1
       kind: EndpointPickerConfig
       plugins:
-      - type: queue-scorer
-      - type: kv-cache-scorer
-      - type: prefix-cache-scorer
-        parameters:
-          hashBlockSize: 64
-          maxPrefixBlocksToMatch: 256
-          lruCapacityPerServer: 31250
-      - type: max-score-picker
-        parameters:
-          maxNumOfEndpoints: 1
-      - type: single-profile-handler
+        - type: single-profile-handler
+        - type: prefix-cache-scorer
+          parameters:
+            mode: cache_tracking
+            indexerConfig:
+              tokenProcessorConfig:
+                blockSize: 64                         # must match vLLM block size if not default (16)
+                hashSeed: "42"                        # must match PYTHONHASHSEED in vLLM pods
+              kvBlockIndexConfig:
+                enableMetrics: true                   # enable kv-block index metrics (prometheus)
+                metricsLoggingInterval: 60000000000   # log kv-block metrics as well (1m in nanoseconds)
+        - type: queue-scorer
+        - type: weighted-random-picker
       schedulingProfiles:
-      - name: default
-        plugins:
-        - pluginRef: queue-scorer
-          weight: 1
-        - pluginRef: kv-cache-scorer
-          weight: 1
-        - pluginRef: prefix-cache-scorer
-          weight: 1
-        - pluginRef: max-score-picker
+        - name: default
+          plugins:
+            - pluginRef: prefix-cache-scorer
+              weight: 100.0
+            - pluginRef: queue-scorer
+              weight: 1.0
+            - pluginRef: weighted-random-picker
 
 inferencePool:
   apiVersion: inference.networking.x-k8s.io/v1alpha2
