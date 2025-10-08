@@ -1,6 +1,10 @@
 inferenceExtension:
   replicas: 1
-  logVerbosity: 5
+  #logVerbosity: 5
+  flags:
+    # Log verbosity
+    - name: v
+      value: 5
   image:
     # Either image will work, you just need to bring the correct plugins per image. In this example we will bring the upstream default plugin
     ###################
@@ -15,7 +19,7 @@ inferenceExtension:
     ###################
     pullPolicy: Always
   extProcPort: 9002
-  
+
   # OPTION 1: Use default plugins
   # pluginsConfigFile: "default-plugins-custom.yaml"
   # pluginsCustomConfig:
